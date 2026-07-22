@@ -413,7 +413,7 @@ export async function runAiScraper(
   };
 
   if (request.country) {
-    inputRecord.geolocation = request.country;
+    inputRecord.country = request.country;
   }
 
   const scrapeResponse = await fetchWithTimeout(

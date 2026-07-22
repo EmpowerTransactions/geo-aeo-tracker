@@ -4,6 +4,15 @@ All notable changes to GEO/AEO Tracker are documented here.
 
 ---
 
+## [1.4.1] — 2026-07-22
+
+### 🐛 Fix: geo-scoped tracking now actually targets the country
+
+- The Region selector was sending the country as a `geolocation` input field, which Bright Data's AI scrapers silently ignore, so every country returned the same (default) answer. Now it sends the documented `country` field with the uppercase ISO code, which the scrapers honor. Verified live: the same prompt run at `US` vs `GB` returns market-specific answers (US → 911, Verizon/AT&T/T-Mobile; GB → 999/112, EE/Vodafone/Three/O2).
+- Note: available countries vary by engine (Gemini excludes European countries, Grok is currently unavailable as a Bright Data scraper). An unsupported country is skipped for that engine while the others still run.
+
+---
+
 ## [1.4.0] — 2026-07-22
 
 ### 🌍 New: Geo-scoped visibility tracking
