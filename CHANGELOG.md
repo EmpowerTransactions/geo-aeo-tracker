@@ -4,6 +4,21 @@ All notable changes to GEO/AEO Tracker are documented here.
 
 ---
 
+## [1.3.2] — 2026-07-22
+
+### 📝 Docs / Licensing
+
+- **Added an MIT `LICENSE`.** The repo was previously unlicensed (all rights reserved by default), which blocked forking and self-hosting despite the open-source intent. (#9)
+- **Added a committed `.env.example`** with every variable documented inline, so setup is copy-paste (`cp .env.example .env`). (#8)
+- **README setup rewrite:** what each variable does, `BRIGHT_DATA_DATASET_GROK` marked optional (Bright Data does not always list a public Grok scraper), why `GEMINI_API_KEY` is needed alongside OpenRouter (it powers the Google Search grounding stage OpenRouter can't do), and how to set the SERP + Web Unlocker zones. (#8)
+- `.gitignore` now allows `.env.example` while keeping real `.env` files ignored.
+
+### 🐛 Fixes
+
+- Clearer, actionable error when an engine's dataset ID is unset: it names the engine as optional and tells you to set the env var or deselect it, instead of a generic missing-id throw.
+
+---
+
 ## [1.3.1] — 2026-06-20
 
 ### 🤖 Default model → Gemini 3.5 Flash
