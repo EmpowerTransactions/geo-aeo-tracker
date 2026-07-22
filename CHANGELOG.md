@@ -4,6 +4,19 @@ All notable changes to GEO/AEO Tracker are documented here.
 
 ---
 
+## [1.4.0] — 2026-07-22
+
+### 🌍 New: Geo-scoped visibility tracking
+
+- **Track AI visibility by country.** A new **Region** selector in the header runs your prompts through Bright Data from a chosen country (2-letter geolocation), so you can see how ChatGPT, Perplexity, Gemini, Copilot, Google AI, and Grok answer differently by market.
+- **"Visibility by country"** panel in Visibility Analytics — average visibility per country, highest first.
+- Each run is tagged with the country it was executed in, and the country is included in the runs CSV export.
+- 13 countries out of the box (US, GB, CA, AU, DE, FR, ES, IT, NL, BR, IN, JP, MX).
+
+> Note: geo scoping currently applies to the core multi-engine tracking path (`/api/scrape`). The SRO deep-analysis pipeline still runs US-based; per-country SRO is a planned follow-up.
+
+---
+
 ## [1.3.2] — 2026-07-22
 
 ### 📝 Docs / Licensing
