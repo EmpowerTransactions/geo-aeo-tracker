@@ -154,34 +154,30 @@ cd geo-aeo-tracker
 npm install
 ```
 
-Create `.env` in the project root:
+Copy the template and fill in your keys. Every variable is documented inline in `.env.example`:
 
-```env
-BRIGHT_DATA_KEY=your_bright_data_api_key
-
-# AI Scraper dataset IDs (from Bright Data Scrapers Library)
-BRIGHT_DATA_DATASET_CHATGPT=gd_xxx
-BRIGHT_DATA_DATASET_PERPLEXITY=gd_xxx
-BRIGHT_DATA_DATASET_COPILOT=gd_xxx
-BRIGHT_DATA_DATASET_GEMINI=gd_xxx
-BRIGHT_DATA_DATASET_GOOGLE_AI=gd_xxx
-BRIGHT_DATA_DATASET_GROK=gd_xxx
-
-# OpenRouter (powers /api/analyze, /api/sro-analyze, /api/site-context)
-OPENROUTER_KEY=your_openrouter_api_key
-
-# Gemini API (powers Gemini Grounding in SRO Analysis)
-GEMINI_API_KEY=your_gemini_api_key
-
-# Bright Data zones for the SRO pipeline (SERP + Web Unlocker).
-# Use your own zone names from the Bright Data dashboard.
-BRIGHT_DATA_SERP_ZONE=your_serp_zone
-BRIGHT_DATA_UNLOCKER_ZONE=your_web_unlocker_zone
-
-# Optional: override the OpenRouter model used by /api/analyze,
-# /api/sro-analyze, and /api/site-context (default: google/gemini-3.5-flash).
-# OPENROUTER_MODEL=google/gemini-3.5-flash
+```bash
+cp .env.example .env
 ```
+
+Only the required block is needed to run the tracker. The rest is optional and the app degrades gracefully without it.
+
+#### What each variable does
+
+- **`BRIGHT_DATA_KEY`** — your Bright Data API key.
+- **`BRIGHT_DATA_DATASET_*`** — one AI Scraper dataset ID per engine, from the [Scrapers Library](https://brightdata.com/cp/scrapers). Each engine is independent: set only the ones you want, a missing dataset just skips that engine.
+- **`BRIGHT_DATA_DATASET_GROK`** — **optional.** Bright Data does not always list a public Grok scraper. If your account has no Grok dataset, leave this blank and deselect Grok in the dashboard. The other engines run fine.
+- **`OPENROUTER_KEY`** — powers LLM analysis (`/api/analyze`, `/api/sro-analyze`, `/api/site-context`). Optional model override via `OPENROUTER_MODEL` (default `google/gemini-3.5-flash`).
+- **`GEMINI_API_KEY`** — **separate from OpenRouter and needed for SRO Analysis.** It powers the Gemini *grounding* stage, which uses Google Search grounding to see which pages Gemini actually cites in real time. OpenRouter can't do that, so this key is required even with OpenRouter set. Without it, the rest of the SRO pipeline still runs and just skips grounding.
+
+#### Bright Data zones (SERP + Web Unlocker)
+
+The SRO pipeline needs two zones. Create them once in the Bright Data dashboard and paste the **zone names** (not the keys):
+
+- **`BRIGHT_DATA_SERP_ZONE`** — a [SERP API](https://brightdata.com/products/serp-api) zone. Default settings are fine.
+- **`BRIGHT_DATA_UNLOCKER_ZONE`** — a [Web Unlocker](https://brightdata.com/products/web-unlocker) zone. Defaults are fine (JS rendering on, automatic CAPTCHA solving). Used to scrape cited and target pages.
+
+Optional Supabase cloud-sync and demo-mode variables are documented in `.env.example`.
 
 ```bash
 npm run dev

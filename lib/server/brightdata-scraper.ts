@@ -392,7 +392,8 @@ export async function runAiScraper(
 
   if (!datasetId) {
     throw new Error(
-      `Missing dataset id for provider ${parsed}. Expected env: ${providerToDatasetEnv[parsed]}`,
+      `${parsed} is not configured. Set ${providerToDatasetEnv[parsed]} in your .env to enable it, ` +
+        `or deselect ${parsed} in the dashboard. This engine is optional and the others run without it.`,
     );
   }
 
