@@ -20,6 +20,8 @@ export type ScrapeRun = {
   brandMentions: string[];
   /** Competitor names found in the answer */
   competitorMentions: string[];
+  /** ISO country code the run was executed in (Bright Data geolocation) */
+  country?: string;
 };
 
 /** Structured section inside a battlecard */
@@ -78,7 +80,12 @@ export type Workspace = {
 };
 
 export const ALL_PROVIDERS: Provider[] = [
-  "chatgpt", "perplexity", "copilot", "gemini", "google_ai", "grok",
+  "chatgpt",
+  "perplexity",
+  "copilot",
+  "gemini",
+  "google_ai",
+  "grok",
 ];
 
 export const PROVIDER_LABELS: Record<Provider, string> = {
@@ -89,6 +96,27 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
   google_ai: "Google AI",
   grok: "Grok",
 };
+
+/** Countries available for geo-scoped AI-visibility tracking (Bright Data geolocation, 2-letter codes) */
+export const COUNTRIES: { code: string; label: string }[] = [
+  { code: "US", label: "United States" },
+  { code: "GB", label: "United Kingdom" },
+  { code: "CA", label: "Canada" },
+  { code: "AU", label: "Australia" },
+  { code: "DE", label: "Germany" },
+  { code: "FR", label: "France" },
+  { code: "ES", label: "Spain" },
+  { code: "IT", label: "Italy" },
+  { code: "NL", label: "Netherlands" },
+  { code: "BR", label: "Brazil" },
+  { code: "IN", label: "India" },
+  { code: "JP", label: "Japan" },
+  { code: "MX", label: "Mexico" },
+];
+
+export const COUNTRY_LABELS: Record<string, string> = Object.fromEntries(
+  COUNTRIES.map((c) => [c.code, c.label]),
+);
 
 /** A drift alert generated when visibility changes significantly between auto-runs */
 export type DriftAlert = {
@@ -105,7 +133,11 @@ export type DriftAlert = {
 /** Schedule interval value in milliseconds */
 export type ScheduleInterval = 3600000 | 21600000 | 43200000 | 86400000;
 
-export const SCHEDULE_OPTIONS: { value: ScheduleInterval; label: string; desc: string }[] = [
+export const SCHEDULE_OPTIONS: {
+  value: ScheduleInterval;
+  label: string;
+  desc: string;
+}[] = [
   { value: 3600000, label: "Every Hour", desc: "Run once per hour" },
   { value: 21600000, label: "Every 6 Hours", desc: "Run 4× per day" },
   { value: 43200000, label: "Every 12 Hours", desc: "Run 2× per day" },
@@ -141,6 +173,8 @@ export type AppState = {
   provider: Provider;
   /** Multiple providers selected for parallel runs */
   activeProviders: Provider[];
+  /** Active country (2-letter code) for geo-scoped AI-visibility tracking */
+  country: string;
   prompt: string;
   customPrompts: TaggedPrompt[];
   personas: string;

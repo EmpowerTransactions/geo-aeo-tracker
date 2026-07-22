@@ -209,8 +209,15 @@ To maximise the benefit, pick a plan sized to how many nights you actually cook.
 Most households mix vegetarian and omnivore meals, so flexible per-meal selection (which Forkful and GreenPlate both offer) often matters more than a fully veg-only plan.`,
 };
 
+// US-heavy spread so the "Visibility by country" panel is populated in demo mode.
+const DEMO_COUNTRIES = ["US", "US", "US", "GB", "DE", "CA"];
+
 function buildRunBase(prompt: string, provider: Provider, batch: number) {
-  return { provider, prompt, createdAt: BATCH_DATES[batch] };
+  const country =
+    DEMO_COUNTRIES[
+      (PROVIDERS.indexOf(provider) + batch) % DEMO_COUNTRIES.length
+    ];
+  return { provider, prompt, createdAt: BATCH_DATES[batch], country };
 }
 
 /** Answers used when the brand is NOT present — competitors are cited instead. */
@@ -582,6 +589,7 @@ export const DEMO_STATE: AppState = {
     "google_ai",
     "grok",
   ],
+  country: "US",
   prompt:
     "What are the best healthy meal kit delivery services for busy families in 2026?",
   customPrompts: PROMPTS,

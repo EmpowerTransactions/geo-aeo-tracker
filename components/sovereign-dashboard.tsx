@@ -43,6 +43,7 @@ import {
   ALL_PROVIDERS,
   PROVIDER_LABELS,
   SCHEDULE_OPTIONS,
+  COUNTRIES,
   tabs,
 } from "@/components/dashboard/types";
 
@@ -176,6 +177,7 @@ const defaultState: AppState = {
   },
   provider: "chatgpt",
   activeProviders: ["chatgpt"],
+  country: "US",
   prompt: "What are the best tools in your category in 2026? Include sources.",
   customPrompts: [
     {
@@ -994,6 +996,7 @@ export function SovereignDashboard({
           provider,
           prompt,
           requireSources: true,
+          country: state.country,
         }),
       });
 
@@ -1019,6 +1022,7 @@ export function SovereignDashboard({
         sentiment: detectSentiment(answerText, brandTerms),
         brandMentions: findMentions(answerText, brandTerms),
         competitorMentions: findMentions(answerText, competitorTerms),
+        country: state.country,
       };
     } catch {
       return null;
@@ -2009,6 +2013,25 @@ ${exampleJson}`,
                 : "All"}
             </button>
           </div>
+
+          {/* Country / geo selector */}
+          <label className="hidden text-sm text-th-text-muted lg:inline">
+            Region
+          </label>
+          <select
+            value={state.country}
+            onChange={(e) =>
+              setState((prev) => ({ ...prev, country: e.target.value }))
+            }
+            className="rounded-md border border-th-border bg-th-card-alt px-2 py-1 text-xs text-th-text-secondary hover:bg-th-card-hover"
+            title="Country to run AI-visibility checks from (Bright Data geolocation)"
+          >
+            {COUNTRIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} — {c.label}
+              </option>
+            ))}
+          </select>
 
           {/* Theme toggle */}
           <button

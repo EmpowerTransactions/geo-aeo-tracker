@@ -11,6 +11,7 @@ import {
 import {
   ALL_PROVIDERS,
   PROVIDER_LABELS,
+  COUNTRY_LABELS,
   type ScrapeRun,
 } from "@/components/dashboard/types";
 
@@ -45,12 +46,13 @@ export function VisibilityAnalyticsTab({
 }: VisibilityAnalyticsTabProps) {
   const exportRunsCsv = useCallback(() => {
     const header =
-      "Date,Provider,Prompt,Visibility Score,Sentiment,Brand Mentions,Competitor Mentions,Sources Count\n";
+      "Date,Provider,Country,Prompt,Visibility Score,Sentiment,Brand Mentions,Competitor Mentions,Sources Count\n";
     const rows = runs
       .map((r) =>
         [
           r.createdAt,
           r.provider,
+          r.country || "US",
           `"${r.prompt.replace(/"/g, '""')}"`,
           r.visibilityScore ?? 0,
           r.sentiment ?? "",
@@ -98,6 +100,22 @@ export function VisibilityAnalyticsTab({
     .filter((x) => x.count > 0)
     .sort((a, b) => b.avg - a.avg);
 
+  // Per-country average visibility, highest first (geo-scoped runs only).
+  const byCountry = Object.values(
+    runs.reduce(
+      (acc, r) => {
+        const code = r.country || "US";
+        if (!acc[code]) acc[code] = { code, sum: 0, count: 0 };
+        acc[code].sum += r.visibilityScore ?? 0;
+        acc[code].count += 1;
+        return acc;
+      },
+      {} as Record<string, { code: string; sum: number; count: number }>,
+    ),
+  )
+    .map((c) => ({ code: c.code, avg: Math.round(c.sum / c.count) }))
+    .sort((a, b) => b.avg - a.avg);
+
   return (
     <div className="space-y-4">
       {/* Visibility by AI engine */}
@@ -137,6 +155,33 @@ export function VisibilityAnalyticsTab({
           </div>
         )}
       </div>
+
+      {/* Visibility by country */}
+      {byCountry.length > 0 && (
+        <div className="rounded-lg border border-th-border bg-th-card p-4">
+          <div className="mb-3 text-xs font-medium uppercase tracking-wider text-th-text-muted">
+            Visibility by country
+          </div>
+          <div className="space-y-2.5">
+            {byCountry.map(({ code, avg }) => (
+              <div key={code} className="flex items-center gap-3">
+                <span className="w-28 shrink-0 text-sm text-th-text">
+                  {code} — {COUNTRY_LABELS[code] ?? code}
+                </span>
+                <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-th-card-alt">
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full bg-th-accent transition-all"
+                    style={{ width: `${avg}%` }}
+                  />
+                </div>
+                <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums text-th-text">
+                  {avg}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Sentiment distribution */}
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

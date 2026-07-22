@@ -70,6 +70,7 @@ Existing tools charge **$200–$500+/month**, lock you into closed ecosystems, a
 ### 🚀 Core Capabilities
 
 - 🤖 **Multi-model tracking** across ChatGPT, Perplexity, Gemini, Copilot, Google AI Overview, Grok
+- 🌍 **Geo-scoped tracking**: run visibility checks by country and compare markets, with a "visibility by country" breakdown
 - � **SRO Analysis**: 6-stage pipeline scoring how well your page is optimized for AI search results
 - 📈 **Visibility scoring** (0–100): brand mentions, position, frequency, citations, sentiment
 - 🔔 **Drift alerts**: automatic notifications when your score changes significantly
