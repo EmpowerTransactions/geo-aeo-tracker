@@ -18,6 +18,8 @@ const buckets = new Map<string, Bucket>();
 const LIMITS: Record<string, { limit: number; windowMs: number }> = {
   "/api/bulk-sro": { limit: 4, windowMs: 60_000 },
   "/api/scrape": { limit: 20, windowMs: 60_000 },
+  // Batch poller: ONE request per 5s tick regardless of in-flight job count.
+  "/api/scrape/status": { limit: 60, windowMs: 60_000 },
   "/api/brightdata-platforms": { limit: 12, windowMs: 60_000 },
   "/api/sro-analyze": { limit: 20, windowMs: 60_000 },
 };

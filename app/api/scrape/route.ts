@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { runAiScraper } from "@/lib/server/brightdata-scraper";
+import { startAiScrape } from "@/lib/server/brightdata-scraper";
 
+// Bright Data snapshots take minutes; this route only TRIGGERS the job (fast)
+// and returns { status: "pending", snapshotId } — or { status: "ready",
+// result } on a warm cache hit. The client resolves pending jobs through
+// POST /api/scrape/status. Nothing here may wait on a snapshot: Netlify sync
+// functions cap at 60s and the proxy.ts rate-limit middleware (an Edge
+// Function) caps responses at 40s.
 export const runtime = "nodejs";
-export const maxDuration = 300;
 
 const InputSchema = z.object({
   provider: z.enum([
@@ -23,7 +28,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const parsed = InputSchema.parse(body);
-    const result = await runAiScraper(parsed);
+    const result = await startAiScrape(parsed);
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
