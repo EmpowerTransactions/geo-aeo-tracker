@@ -412,7 +412,7 @@ export async function runAiScraper(
     index: 1,
   };
 
-  if (request.country) {
+  if (request.country && parsed !== "chatgpt" && parsed !== "gemini") {
     inputRecord.country = request.country;
   }
 
