@@ -27,6 +27,7 @@ import { ReputationSourcesTab } from "@/components/dashboard/tabs/reputation-sou
 import { VisibilityAnalyticsTab } from "@/components/dashboard/tabs/visibility-analytics-tab";
 import { DocumentationTab } from "@/components/dashboard/tabs/documentation-tab";
 import { SROAnalysisTab } from "@/components/dashboard/tabs/sro-analysis-tab";
+import { runScrape } from "@/lib/client/scrape-client";
 import type {
   AppState,
   Battlecard,
@@ -989,19 +990,12 @@ export function SovereignDashboard({
       return null;
     }
     try {
-      const response = await fetch("/api/scrape", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider,
-          prompt,
-          requireSources: true,
-          country: state.country,
-        }),
+      const data = await runScrape({
+        provider,
+        prompt,
+        requireSources: true,
+        country: state.country,
       });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Scrape request failed");
 
       const answerText = data.answer || "";
       const sourceList = data.sources || [];
@@ -1009,8 +1003,8 @@ export function SovereignDashboard({
       const competitorTerms = getCompetitorTerms();
 
       return {
-        provider: data.provider,
-        prompt: data.prompt,
+        provider,
+        prompt,
         answer: answerText,
         sources: sourceList,
         createdAt: data.createdAt || new Date().toISOString(),
@@ -1024,7 +1018,11 @@ export function SovereignDashboard({
         competitorMentions: findMentions(answerText, competitorTerms),
         country: state.country,
       };
-    } catch {
+    } catch (error) {
+      console.warn(
+        `[scrape] ${provider} failed for "${prompt.slice(0, 60)}":`,
+        error instanceof Error ? error.message : error,
+      );
       return null;
     }
   }
@@ -1091,7 +1089,9 @@ export function SovereignDashboard({
         : [state.provider];
     const totalJobs = prompts.length * providers.length;
     setBusy(true);
-    setMessage(`Batch: launching ${totalJobs} jobs in parallel...`);
+    setMessage(
+      `Batch: queued ${totalJobs} jobs (throttled to respect rate limits)...`,
+    );
 
     // Fire ALL prompt × provider combinations at once
     const jobs = prompts.flatMap((prompt) =>
