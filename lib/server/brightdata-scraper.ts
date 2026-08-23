@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { fetchWithTimeout } from "./http";
 
-const ProviderSchema = z.enum([
+export const ProviderSchema = z.enum([
   "chatgpt",
   "perplexity",
   "copilot",
@@ -384,6 +384,63 @@ async function downloadSnapshot(snapshotId: string) {
   return response.json();
 }
 
+function normalizeScrapePayload(
+  payload: unknown,
+  parsed: Provider,
+  prompt: string,
+): NormalizedScrapeResult {
+  // Keep unsanitized first record for structured source extraction
+  const rawFirst = Array.isArray(payload)
+    ? (payload as Record<string, unknown>[])[0]
+    : (payload as Record<string, unknown>);
+  const rawRecord = (rawFirst ?? {}) as Record<string, unknown>;
+
+  const sanitizedPayload = stripAnswerHtml(payload);
+  const sanitizedFirst = Array.isArray(sanitizedPayload)
+    ? sanitizedPayload[0]
+    : (sanitizedPayload as Record<string, unknown>);
+  const record = (sanitizedFirst ?? {}) as Record<string, unknown>;
+  const answer = normalizeAnswer(record);
+
+  // Extract sources from answer text
+  const textSources = extractSourcesFromAnswer(answer);
+
+  // Also extract from Bright Data's structured citation fields
+  const structuredSources: string[] = [];
+  for (const field of ["citations", "links_attached", "sources"]) {
+    const arr = rawRecord[field];
+    if (Array.isArray(arr)) {
+      for (const item of arr) {
+        if (typeof item === "string" && item.startsWith("http")) {
+          structuredSources.push(item);
+        } else if (item && typeof item === "object") {
+          const url = (item as Record<string, unknown>).url;
+          if (typeof url === "string" && url.startsWith("http")) {
+            structuredSources.push(url);
+          }
+        }
+      }
+    }
+  }
+
+  // Merge and deduplicate
+  const allSources = [...new Set([...textSources, ...structuredSources])];
+
+  const normalized: NormalizedScrapeResult = {
+    provider: parsed,
+    prompt: prompt,
+    answer,
+    sources: allSources,
+    snapshotId:
+      typeof record.snapshot_id === "string" ? record.snapshot_id : undefined,
+    cached: false,
+    raw: sanitizedPayload,
+    createdAt: new Date().toISOString(),
+  };
+
+  return normalized;
+}
+
 export async function runAiScraper(
   request: ScrapeRequest,
 ): Promise<NormalizedScrapeResult> {
@@ -442,54 +499,7 @@ export async function runAiScraper(
     payload = await scrapeResponse.json();
   }
 
-  // Keep unsanitized first record for structured source extraction
-  const rawFirst = Array.isArray(payload)
-    ? (payload as Record<string, unknown>[])[0]
-    : (payload as Record<string, unknown>);
-  const rawRecord = (rawFirst ?? {}) as Record<string, unknown>;
-
-  const sanitizedPayload = stripAnswerHtml(payload);
-  const sanitizedFirst = Array.isArray(sanitizedPayload)
-    ? sanitizedPayload[0]
-    : (sanitizedPayload as Record<string, unknown>);
-  const record = (sanitizedFirst ?? {}) as Record<string, unknown>;
-  const answer = normalizeAnswer(record);
-
-  // Extract sources from answer text
-  const textSources = extractSourcesFromAnswer(answer);
-
-  // Also extract from Bright Data's structured citation fields
-  const structuredSources: string[] = [];
-  for (const field of ["citations", "links_attached", "sources"]) {
-    const arr = rawRecord[field];
-    if (Array.isArray(arr)) {
-      for (const item of arr) {
-        if (typeof item === "string" && item.startsWith("http")) {
-          structuredSources.push(item);
-        } else if (item && typeof item === "object") {
-          const url = (item as Record<string, unknown>).url;
-          if (typeof url === "string" && url.startsWith("http")) {
-            structuredSources.push(url);
-          }
-        }
-      }
-    }
-  }
-
-  // Merge and deduplicate
-  const allSources = [...new Set([...textSources, ...structuredSources])];
-
-  const normalized: NormalizedScrapeResult = {
-    provider: parsed,
-    prompt: request.prompt,
-    answer,
-    sources: allSources,
-    snapshotId:
-      typeof record.snapshot_id === "string" ? record.snapshot_id : undefined,
-    cached: false,
-    raw: sanitizedPayload,
-    createdAt: new Date().toISOString(),
-  };
+  const normalized = normalizeScrapePayload(payload, parsed, request.prompt);
 
   // Bound the cache: drop expired entries (and, if still oversized, the oldest)
   // so a long-lived process can't leak memory on high-cardinality prompts.
@@ -509,4 +519,155 @@ export async function runAiScraper(
   });
 
   return normalized;
+}
+
+// ---------------------------------------------------------------------------
+// Async split (trigger + status poll)
+//
+// Netlify fronts every /api route with the proxy.ts rate-limit middleware,
+// deployed as an Edge Function with a hard 40s response cap, and synchronous
+// Netlify Functions cap at 60s. Bright Data dataset snapshots routinely take
+// minutes, so no single request may wait for one. startAiScrape() fires the
+// job via /datasets/v3/trigger (returns a snapshot_id immediately) and
+// checkAiScrapes() resolves progress/downloads in short batch calls driven by
+// the client's poller.
+// ---------------------------------------------------------------------------
+
+export type ScrapeTriggerResult =
+  | { status: "ready"; result: NormalizedScrapeResult }
+  | {
+      status: "pending";
+      snapshotId: string;
+      provider: Provider;
+      prompt: string;
+    };
+
+export async function startAiScrape(
+  request: ScrapeRequest,
+): Promise<ScrapeTriggerResult> {
+  const parsed = ProviderSchema.parse(request.provider);
+  const datasetId = getDatasetId(parsed);
+
+  if (!datasetId) {
+    throw new Error(
+      `${parsed} is not configured. Set ${providerToDatasetEnv[parsed]} in your .env to enable it, ` +
+        `or deselect ${parsed} in the dashboard. This engine is optional and the others run without it.`,
+    );
+  }
+
+  const cacheKey = buildCacheKey(request);
+  const cacheHit = inMemoryCache.get(cacheKey);
+  if (cacheHit && cacheHit.expiresAt > Date.now()) {
+    return { status: "ready", result: { ...cacheHit.value, cached: true } };
+  }
+
+  const inputRecord: Record<string, unknown> = {
+    url: providerBaseUrl[parsed],
+    prompt: request.prompt,
+    index: 1,
+  };
+
+  // ChatGPT and Gemini datasets reject `country` at validation (HTTP 400).
+  if (request.country && parsed !== "chatgpt" && parsed !== "gemini") {
+    inputRecord.country = request.country;
+  }
+
+  // /trigger takes a BARE JSON array and returns { snapshot_id } immediately.
+  const res = await fetchWithTimeout(
+    `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${datasetId}&include_errors=true`,
+    {
+      method: "POST",
+      headers: withAuthHeaders(),
+      body: JSON.stringify([inputRecord]),
+    },
+    25_000,
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Trigger failed (${res.status}): ${text.slice(0, 500)}`);
+  }
+
+  const json = (await res.json()) as { snapshot_id?: string };
+  if (!json.snapshot_id) {
+    throw new Error(
+      `Trigger returned no snapshot_id: ${JSON.stringify(json).slice(0, 300)}`,
+    );
+  }
+
+  return {
+    status: "pending",
+    snapshotId: json.snapshot_id,
+    provider: parsed,
+    prompt: request.prompt,
+  };
+}
+
+export type ScrapeStatusItem = {
+  snapshotId: string;
+  provider: Provider;
+  prompt: string;
+  requireSources?: boolean;
+};
+
+export type ScrapeStatusResult =
+  | { snapshotId: string; status: "pending" }
+  | { snapshotId: string; status: "failed"; error: string }
+  | { snapshotId: string; status: "ready"; result: NormalizedScrapeResult };
+
+async function checkOneScrape(
+  item: ScrapeStatusItem,
+): Promise<ScrapeStatusResult> {
+  const parsed = ProviderSchema.parse(item.provider);
+  try {
+    const progressRes = await fetchWithTimeout(
+      `https://api.brightdata.com/datasets/v3/progress/${item.snapshotId}`,
+      { method: "GET", headers: withAuthHeaders() },
+      10_000,
+    );
+    if (!progressRes.ok) {
+      // Transient monitor failure: report pending so the next tick retries.
+      return { snapshotId: item.snapshotId, status: "pending" };
+    }
+    const progress = (await progressRes.json()) as {
+      status: "starting" | "running" | "ready" | "failed";
+    };
+    if (progress.status === "failed") {
+      return {
+        snapshotId: item.snapshotId,
+        status: "failed",
+        error: "Bright Data reported the snapshot as failed.",
+      };
+    }
+    if (progress.status !== "ready") {
+      return { snapshotId: item.snapshotId, status: "pending" };
+    }
+
+    const payload = await downloadSnapshot(item.snapshotId);
+    const result = normalizeScrapePayload(payload, parsed, item.prompt);
+
+    // Best-effort per-instance cache so a duplicate prompt within the TTL can
+    // resolve instantly at trigger time.
+    inMemoryCache.set(
+      buildCacheKey({
+        provider: parsed,
+        prompt: item.prompt,
+        requireSources: item.requireSources,
+      }),
+      { expiresAt: Date.now() + OUTPUT_CACHE_TTL_MS, value: result },
+    );
+
+    return { snapshotId: item.snapshotId, status: "ready", result };
+  } catch (error) {
+    // Download/parse hiccups are retryable — the snapshot persists on Bright
+    // Data's side, so report pending rather than failing the job.
+    void error;
+    return { snapshotId: item.snapshotId, status: "pending" };
+  }
+}
+
+export async function checkAiScrapes(
+  items: ScrapeStatusItem[],
+): Promise<ScrapeStatusResult[]> {
+  return Promise.all(items.map((item) => checkOneScrape(item)));
 }
