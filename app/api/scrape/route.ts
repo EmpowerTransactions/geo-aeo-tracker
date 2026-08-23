@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { runAiScraper } from "@/lib/server/brightdata-scraper";
 
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
 const InputSchema = z.object({
   provider: z.enum([
     "chatgpt",
