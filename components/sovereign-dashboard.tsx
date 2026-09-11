@@ -551,7 +551,7 @@ export function SovereignDashboard({
 
     setState((prev) => ({
       ...prev,
-      runs: [...allRuns, ...prev.runs].slice(0, 500),
+      runs: [...allRuns, ...prev.runs].slice(0, 5000),
       lastScheduledRun: new Date().toISOString(),
       driftAlerts: [...newAlerts, ...prev.driftAlerts].slice(0, 100),
     }));
@@ -1058,7 +1058,7 @@ export function SovereignDashboard({
 
       setState((prev) => ({
         ...prev,
-        runs: [...runs, ...prev.runs].slice(0, 500),
+        runs: [...runs, ...prev.runs].slice(0, 5000),
       }));
 
       const failed = count - runs.length;
@@ -1111,7 +1111,7 @@ export function SovereignDashboard({
 
     setState((prev) => ({
       ...prev,
-      runs: [...allRuns, ...prev.runs].slice(0, 500),
+      runs: [...allRuns, ...prev.runs].slice(0, 5000),
     }));
 
     setMessage(
