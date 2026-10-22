@@ -1,10 +1,15 @@
 import { useMemo, useState } from "react";
-import type { ScrapeRun } from "@/components/dashboard/types";
+import type { ScrapeRun, TaggedPrompt } from "@/components/dashboard/types";
 import { ALL_PROVIDERS, PROVIDER_LABELS, type Provider } from "@/components/dashboard/types";
 import type { RunDelta } from "@/components/dashboard/types";
+import { computeScorecard, latestAverage, MIN_COVERAGE, type Scorecard } from "@/components/dashboard/scorecard";
 
 type ReputationSourcesTabProps = {
   runs: ScrapeRun[];
+  prompts: TaggedPrompt[];
+  activeProviders: Provider[];
+  websites: string[];
+  country: string;
   brandTerms: string[];
   competitorTerms: string[];
   runDeltas?: RunDelta[];
@@ -302,6 +307,10 @@ function ModelResponseCard({
 
 export function ReputationSourcesTab({
   runs,
+  prompts,
+  activeProviders,
+  websites,
+  country,
   brandTerms,
   competitorTerms,
   runDeltas = [],
@@ -338,11 +347,7 @@ export function ReputationSourcesTab({
       }));
 
     if (sortField === "score") {
-      return groups.sort((a, b) => {
-        const aAvg = a.runs.reduce((s, r) => s + (r.visibilityScore ?? 0), 0) / a.runs.length;
-        const bAvg = b.runs.reduce((s, r) => s + (r.visibilityScore ?? 0), 0) / b.runs.length;
-        return bAvg - aAvg;
-      });
+      return groups.sort((a, b) => latestAverage(b.runs) - latestAverage(a.runs));
     }
 
     return groups.sort((a, b) => {
@@ -352,33 +357,11 @@ export function ReputationSourcesTab({
     });
   }, [filteredRuns, sortField]);
 
-  // Insight stats
-  const insights = useMemo(() => {
-    if (runs.length === 0) return null;
-    const avgScore = Math.round(runs.reduce((a, r) => a + (r.visibilityScore ?? 0), 0) / runs.length);
-    const sentiments = { positive: 0, neutral: 0, negative: 0, "not-mentioned": 0 };
-    const providerCounts: Partial<Record<Provider, number>> = {};
-    const providerScores: Partial<Record<Provider, number[]>> = {};
-    let brandMentioned = 0;
-    let totalSources = 0;
-
-    runs.forEach((r) => {
-      sentiments[r.sentiment as keyof typeof sentiments] = (sentiments[r.sentiment as keyof typeof sentiments] ?? 0) + 1;
-      providerCounts[r.provider] = (providerCounts[r.provider] ?? 0) + 1;
-      if (!providerScores[r.provider]) providerScores[r.provider] = [];
-      providerScores[r.provider]!.push(r.visibilityScore ?? 0);
-      if ((r.brandMentions?.length ?? 0) > 0) brandMentioned++;
-      totalSources += r.sources.length;
-    });
-
-    const providerAvgs = Object.entries(providerScores).map(([p, scores]) => ({
-      provider: p as Provider,
-      avg: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
-      count: scores.length,
-    })).sort((a, b) => b.avg - a.avg);
-
-    return { avgScore, sentiments, providerAvgs, brandMentioned, totalSources };
-  }, [runs]);
+  // Scorecard: newest answer per question × model, each measured model weighted equally
+  const scorecard = useMemo(
+    () => computeScorecard({ runs, prompts, activeProviders, websites, country }),
+    [runs, prompts, activeProviders, websites, country],
+  );
 
   // Auto-expand first group
   const isGroupOpen = (prompt: string, idx: number) => {
@@ -409,49 +392,7 @@ export function ReputationSourcesTab({
 
   return (
     <div className="space-y-4">
-      {/* ── Insight cards ── */}
-      {insights && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-          <InsightMini label="Avg Score" value={`${insights.avgScore}/100`} accent />
-          <InsightMini label="Brand Mentioned" value={`${insights.brandMentioned}/${runs.length}`} />
-          <InsightMini
-            label="Positive"
-            value={insights.sentiments.positive}
-            sub={`${Math.round((insights.sentiments.positive / runs.length) * 100)}%`}
-            color="text-th-success"
-          />
-          <InsightMini
-            label="Negative"
-            value={insights.sentiments.negative}
-            sub={`${Math.round((insights.sentiments.negative / runs.length) * 100)}%`}
-            color="text-th-danger"
-          />
-          <InsightMini label="Sources Cited" value={insights.totalSources} />
-          <InsightMini label="Models Used" value={insights.providerAvgs.length} />
-        </div>
-      )}
-
-      {/* ── Per-model breakdown ── */}
-      {insights && insights.providerAvgs.length > 1 && (
-        <div className="rounded-xl border border-th-border bg-th-card p-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wider text-th-text-muted">
-            Score by Model
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {insights.providerAvgs.map(({ provider, avg, count }) => (
-              <div
-                key={provider}
-                className="flex items-center gap-2 rounded-lg border border-th-border bg-th-card-alt px-3 py-1.5"
-              >
-                <ProviderBadge provider={provider} />
-                <span className="text-sm font-semibold text-th-text">{avg}</span>
-                <span className="text-xs text-th-text-muted">/ 100</span>
-                <span className="text-xs text-th-text-muted">({count})</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ScorecardPanel scorecard={scorecard} storedAnswers={runs.length} country={country} />
 
       {/* ── Filter / sort toolbar ── */}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-th-border bg-th-card px-3 py-2.5">
@@ -502,9 +443,7 @@ export function ReputationSourcesTab({
       <div className="space-y-2">
         {promptGroups.map(({ prompt, runs: groupRuns }, groupIdx) => {
           const open = isGroupOpen(prompt, groupIdx);
-          const avgScore = Math.round(
-            groupRuns.reduce((a, r) => a + (r.visibilityScore ?? 0), 0) / groupRuns.length,
-          );
+          const avgScore = latestAverage(groupRuns);
           const providers = [...new Set(groupRuns.map((r) => r.provider))];
           const scoreColor =
             avgScore >= 60 ? "text-th-success" : avgScore >= 30 ? "text-th-text-accent" : "text-th-danger";
@@ -539,8 +478,11 @@ export function ReputationSourcesTab({
                       {groupRuns.length} response{groupRuns.length > 1 ? "s" : ""}
                     </span>
                     <span className="text-xs text-th-text-muted">·</span>
-                    <span className={`text-xs font-semibold ${scoreColor}`}>
-                      Avg: {avgScore}/100
+                    <span
+                      className={`text-xs font-semibold ${scoreColor}`}
+                      title="Average of the newest answer from each model"
+                    >
+                      Latest avg: {avgScore}/100
                     </span>
                     {avgDelta != null && avgDelta !== 0 && (
                       <span className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-bold ${
@@ -575,6 +517,144 @@ export function ReputationSourcesTab({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ── Scorecard ── */
+const pct = (rate: number | null) => (rate == null ? "—" : `${Math.round(rate * 100)}%`);
+
+function ScorecardPanel({
+  scorecard,
+  storedAnswers,
+  country,
+}: {
+  scorecard: Scorecard;
+  storedAnswers: number;
+  country: string;
+}) {
+  const [showAllTags, setShowAllTags] = useState(false);
+  const measured = scorecard.providers.filter((p) => p.measured);
+  const tags = showAllTags ? scorecard.tags : scorecard.tags.slice(0, 8);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <InsightMini
+          label="Visibility Score"
+          value={scorecard.score == null ? "—" : `${scorecard.score}/100`}
+          sub={measured.length > 0 ? "latest" : undefined}
+          accent
+        />
+        <InsightMini label="Named In" value={pct(scorecard.namedRate)} sub="of latest answers" />
+        <InsightMini label="Our Site Cited" value={pct(scorecard.citedRate)} sub="of latest answers" />
+        <InsightMini label="Models Measured" value={`${measured.length} of ${scorecard.providers.length}`} />
+        <InsightMini label="Questions" value={scorecard.questions} />
+        <InsightMini label="Stored Answers" value={storedAnswers} sub="incl. history" />
+      </div>
+
+      <p className="px-1 text-xs text-th-text-muted">
+        Scores use the newest answer to each question from each model, and every measured model counts
+        equally{country ? ` (${country} answers only)` : ""}. A model is measured once it has answered at
+        least {Math.round(MIN_COVERAGE * 100)}% of the questions; below that it is left out rather than
+        counted as zero.
+      </p>
+
+      {scorecard.providers.length > 0 && (
+        <div className="rounded-xl border border-th-border bg-th-card p-3">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wider text-th-text-muted">
+            Score by Model
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {scorecard.providers.map((p) => (
+              <div
+                key={p.provider}
+                className={`flex items-center gap-2 rounded-lg border border-th-border px-3 py-1.5 ${
+                  p.measured ? "bg-th-card-alt" : "bg-th-card opacity-70"
+                }`}
+              >
+                <ProviderBadge provider={p.provider} />
+                {p.measured ? (
+                  <>
+                    <span className="text-sm font-semibold text-th-text">{p.avg}</span>
+                    <span className="text-xs text-th-text-muted">/ 100</span>
+                    <span className="text-xs text-th-text-muted">
+                      · named {p.named}/{p.answered} · {p.answered} of {scorecard.questions} questions
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-xs text-th-text-muted">
+                    Not measured —{" "}
+                    {p.answered === 0
+                      ? "no answers yet"
+                      : `only ${p.answered} of ${scorecard.questions} questions answered`}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {scorecard.tags.length > 0 && measured.length > 0 && (
+        <div className="rounded-xl border border-th-border bg-th-card p-3">
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <div className="text-xs font-medium uppercase tracking-wider text-th-text-muted">
+              Where we are named, by question group
+            </div>
+            <div className="text-xs text-th-text-muted">Least named first</div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-th-text-muted">
+                <tr className="border-b border-th-border">
+                  <th className="py-1.5 pr-3 font-medium">Group</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Questions</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Named</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Named %</th>
+                  <th className="py-1.5 text-right font-medium">Avg score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tags.map((t) => {
+                  const rate = t.answers > 0 ? t.named / t.answers : null;
+                  return (
+                    <tr key={t.tag} className="border-b border-th-border/40 last:border-0">
+                      <td className="py-1.5 pr-3 text-th-text">{t.tag}</td>
+                      <td className="py-1.5 pr-3 text-right text-th-text-secondary">{t.questions}</td>
+                      <td className="py-1.5 pr-3 text-right text-th-text-secondary">
+                        {t.named}/{t.answers}
+                      </td>
+                      <td
+                        className={`py-1.5 pr-3 text-right font-semibold ${
+                          rate == null
+                            ? "text-th-text-muted"
+                            : rate >= 0.5
+                              ? "text-th-success"
+                              : rate >= 0.2
+                                ? "text-th-text-accent"
+                                : "text-th-danger"
+                        }`}
+                      >
+                        {pct(rate)}
+                      </td>
+                      <td className="py-1.5 text-right text-th-text-secondary">{t.avg}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {scorecard.tags.length > 8 && (
+            <button
+              onClick={() => setShowAllTags(!showAllTags)}
+              className="mt-2 text-xs font-medium text-th-text-accent hover:text-th-accent"
+            >
+              {showAllTags ? "Show fewer" : `Show all ${scorecard.tags.length} groups`}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

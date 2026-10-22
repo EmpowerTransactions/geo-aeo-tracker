@@ -9,11 +9,11 @@ import {
   YAxis,
 } from "recharts";
 import {
-  ALL_PROVIDERS,
   PROVIDER_LABELS,
   COUNTRY_LABELS,
   type ScrapeRun,
 } from "@/components/dashboard/types";
+import type { Scorecard } from "@/components/dashboard/scorecard";
 
 // Brand-ish accent per engine, chosen to stay legible in both themes.
 const PROVIDER_COLORS: Record<string, string> = {
@@ -28,6 +28,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 type VisibilityAnalyticsTabProps = {
   data: Array<{ day: string; visibility: number }>;
   runs: ScrapeRun[];
+  scorecard: Scorecard;
 };
 
 function downloadCsv(filename: string, content: string) {
@@ -43,6 +44,7 @@ function downloadCsv(filename: string, content: string) {
 export function VisibilityAnalyticsTab({
   data,
   runs,
+  scorecard,
 }: VisibilityAnalyticsTabProps) {
   const exportRunsCsv = useCallback(() => {
     const header =
@@ -77,28 +79,14 @@ export function VisibilityAnalyticsTab({
     );
   }, [data]);
 
-  // Sentiment distribution
-  const sentimentCounts = runs.reduce(
-    (acc, r) => {
-      const s = r.sentiment ?? "neutral";
-      acc[s] = (acc[s] || 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>,
+  // Per-engine score from the newest answer to each question, highest first.
+  // Engines that answered too few questions are listed as not measured.
+  const byProvider = [...scorecard.providers].sort(
+    (a, b) => Number(b.measured) - Number(a.measured) || b.avg - a.avg,
   );
-
-  // Per-engine average visibility, highest first.
-  const byProvider = ALL_PROVIDERS.map((provider) => {
-    const rs = runs.filter((r) => r.provider === provider);
-    const avg = rs.length
-      ? Math.round(
-          rs.reduce((a, r) => a + (r.visibilityScore ?? 0), 0) / rs.length,
-        )
-      : 0;
-    return { provider, avg, count: rs.length };
-  })
-    .filter((x) => x.count > 0)
-    .sort((a, b) => b.avg - a.avg);
+  const measured = scorecard.providers.filter((p) => p.measured);
+  const latestAnswers = measured.reduce((a, p) => a + p.answered, 0);
+  const latestNamed = measured.reduce((a, p) => a + p.named, 0);
 
   // Per-country average visibility, highest first (geo-scoped runs only).
   const byCountry = Object.values(
@@ -129,7 +117,7 @@ export function VisibilityAnalyticsTab({
           </p>
         ) : (
           <div className="space-y-2.5">
-            {byProvider.map(({ provider, avg }) => (
+            {byProvider.map(({ provider, avg, measured, answered }) => (
               <div key={provider} className="flex items-center gap-3">
                 <span className="flex w-28 shrink-0 items-center gap-1.5 text-sm text-th-text">
                   <span
@@ -138,18 +126,26 @@ export function VisibilityAnalyticsTab({
                   />
                   {PROVIDER_LABELS[provider]}
                 </span>
-                <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-th-card-alt">
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full transition-all"
-                    style={{
-                      width: `${avg}%`,
-                      backgroundColor: PROVIDER_COLORS[provider],
-                    }}
-                  />
-                </div>
-                <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums text-th-text">
-                  {avg}%
-                </span>
+                {measured ? (
+                  <>
+                    <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-th-card-alt">
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full transition-all"
+                        style={{
+                          width: `${avg}%`,
+                          backgroundColor: PROVIDER_COLORS[provider],
+                        }}
+                      />
+                    </div>
+                    <span className="w-10 shrink-0 text-right text-sm font-semibold tabular-nums text-th-text">
+                      {avg}
+                    </span>
+                  </>
+                ) : (
+                  <span className="flex-1 text-xs text-th-text-muted">
+                    Not measured — {answered === 0 ? "no answers yet" : `${answered} of ${scorecard.questions} questions answered`}
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -183,31 +179,19 @@ export function VisibilityAnalyticsTab({
         </div>
       )}
 
-      {/* Sentiment distribution */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {(["positive", "neutral", "negative", "not-mentioned"] as const).map(
-          (s) => {
-            const colors: Record<string, string> = {
-              positive: "text-th-success",
-              neutral: "text-th-text-accent",
-              negative: "text-th-danger",
-              "not-mentioned": "text-th-text-muted",
-            };
-            return (
-              <div
-                key={s}
-                className="rounded-lg border border-th-border bg-th-card px-3 py-2.5"
-              >
-                <div className="text-xs uppercase tracking-wider text-th-text-muted">
-                  {s}
-                </div>
-                <div className={`mt-0.5 text-xl font-bold ${colors[s]}`}>
-                  {sentimentCounts[s] || 0}
-                </div>
-              </div>
-            );
-          },
-        )}
+      {/* Named vs not named, newest answer per question from each measured engine */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-th-border bg-th-card px-3 py-2.5">
+          <div className="text-xs uppercase tracking-wider text-th-text-muted">Named</div>
+          <div className="mt-0.5 text-xl font-bold text-th-success">
+            {latestNamed}
+            <span className="ml-1 text-xs font-normal text-th-text-muted">of {latestAnswers} latest answers</span>
+          </div>
+        </div>
+        <div className="rounded-lg border border-th-border bg-th-card px-3 py-2.5">
+          <div className="text-xs uppercase tracking-wider text-th-text-muted">Not named</div>
+          <div className="mt-0.5 text-xl font-bold text-th-text-muted">{latestAnswers - latestNamed}</div>
+        </div>
       </div>
 
       {/* Chart */}

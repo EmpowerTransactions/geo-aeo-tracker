@@ -28,6 +28,7 @@ import { VisibilityAnalyticsTab } from "@/components/dashboard/tabs/visibility-a
 import { DocumentationTab } from "@/components/dashboard/tabs/documentation-tab";
 import { SROAnalysisTab } from "@/components/dashboard/tabs/sro-analysis-tab";
 import { runScrape } from "@/lib/client/scrape-client";
+import { computeScorecard } from "@/components/dashboard/scorecard";
 import type {
   AppState,
   Battlecard,
@@ -808,24 +809,18 @@ export function SovereignDashboard({
   const movers = useMemo(() => runDeltas.slice(0, 5), [runDeltas]);
 
   /** KPI delta: compare current period avg visibility vs prior period */
-  const kpiVisibilityDelta = useMemo(() => {
-    if (state.runs.length < 2) return null;
-    const sorted = [...state.runs].sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-    const mid = Math.floor(sorted.length / 2);
-    const recentHalf = sorted.slice(0, mid);
-    const olderHalf = sorted.slice(mid);
-    if (recentHalf.length === 0 || olderHalf.length === 0) return null;
-    const recentAvg =
-      recentHalf.reduce((a, r) => a + (r.visibilityScore ?? 0), 0) /
-      recentHalf.length;
-    const olderAvg =
-      olderHalf.reduce((a, r) => a + (r.visibilityScore ?? 0), 0) /
-      olderHalf.length;
-    return Math.round(recentAvg - olderAvg);
-  }, [state.runs]);
+  /** Headline scorecard: newest answer per question × model, measured models weighted equally */
+  const scorecard = useMemo(
+    () =>
+      computeScorecard({
+        runs: state.runs,
+        prompts: state.customPrompts,
+        activeProviders: state.activeProviders,
+        websites: state.brand.websites,
+        country: state.country,
+      }),
+    [state.runs, state.customPrompts, state.activeProviders, state.brand.websites, state.country],
+  );
 
   /** Unread drift alerts count */
   const unreadAlertCount = useMemo(
@@ -1634,6 +1629,10 @@ ${exampleJson}`,
       return (
         <ReputationSourcesTab
           runs={state.runs}
+          prompts={state.customPrompts}
+          activeProviders={state.activeProviders}
+          websites={state.brand.websites}
+          country={state.country}
           brandTerms={getBrandTerms()}
           competitorTerms={getCompetitorTerms()}
           runDeltas={runDeltas}
@@ -1644,7 +1643,7 @@ ${exampleJson}`,
 
     if (activeTab === "Visibility Analytics") {
       return (
-        <VisibilityAnalyticsTab data={visibilityTrend} runs={state.runs} />
+        <VisibilityAnalyticsTab data={visibilityTrend} runs={state.runs} scorecard={scorecard} />
       );
     }
 
@@ -2056,13 +2055,8 @@ ${exampleJson}`,
             <section className="mb-4 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-6">
               <KpiCard label="Total Runs" value={state.runs.length} />
               <KpiCard
-                label="Avg Visibility"
-                value={
-                  state.runs.length > 0
-                    ? `${Math.round(state.runs.reduce((a, r) => a + (r.visibilityScore ?? 0), 0) / state.runs.length)}%`
-                    : "—"
-                }
-                delta={kpiVisibilityDelta}
+                label="Visibility Score"
+                value={scorecard.score == null ? "—" : `${scorecard.score}/100`}
                 small
                 onInfoClick={() => setShowScoreInfo(!showScoreInfo)}
               />
